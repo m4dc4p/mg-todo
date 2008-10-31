@@ -1,0 +1,6 @@
+task "Make my language parse." 10-31-2008
+task "Define a second task." 10-31-2008
+task 'Create a task with "quotes"' 10-31-2008
+# This task has no due date, with good reason!
+# But too bad I can't parse this comment
+task "Clean out garage."
