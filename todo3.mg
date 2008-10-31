@@ -4,7 +4,7 @@ module ToDo
         // Allow an empty task list.
         syntax Main = TaskLine*;
 
-        syntax TaskLine = "task" Title DueDate;
+        syntax TaskLine = "task" Title DueDate?;
 
         // Allow quoted titles        
         syntax Title = SingleQuotedText | DoubleQuotedText;
@@ -19,10 +19,7 @@ module ToDo
         token DoubleQuotedText = QuotedText("'");
 
         // Parameterized rule.        
-        token QuotedText(Q) = Q (Text - Q)* Q;
-        
-        // Inspired by M.mg
-        token Text = '"' ^('\n' | '\r')* '"'; 
+        token QuotedText(Q) = Q (^('\n' | '\r') - Q)* Q;
         
         // Ignore whitespace
         interleave Whitespace = '\r' | ' ' | '\n';
