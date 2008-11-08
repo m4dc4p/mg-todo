@@ -7,7 +7,7 @@ module ToDo
         syntax Main = Line*;
     
         syntax Line = TaskLine | Comment;
-        syntax TaskLine = "task" Title DueDate?;
+        syntax TaskLine = Task Title DueDate?;
 
         // Allow quoted titles        
         syntax Title = SingleQuotedText | DoubleQuotedText;
