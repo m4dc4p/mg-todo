@@ -81,4 +81,9 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+  <PropertyGroup>
+    <PostBuildEvent>xcopy "$(TargetPath)" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo" /S /D /I /Y
+xcopy "$(TargetDir)*.py" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo" /S /D /I /Y
+</PostBuildEvent>
+  </PropertyGroup>
 </Project>

@@ -8,6 +8,13 @@ using Microsoft.VisualStudio.Text.Classification;
 using System.Reflection;
 using Microsoft.VisualStudio.Text;
 using System;
+using System.Threading;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Dataflow;
+using System.Windows.Threading;
+using Microsoft.Intellipad.Text;
+using Microsoft.VisualStudio.Text.Editor;
 
 namespace ToDo
 {
@@ -54,23 +61,57 @@ namespace ToDo
             }
         }
 
-        class ToDoLanguageServiceItem : ILanguageServiceItem
+        class ErrorInfo
+        {
+            public ISourceLocation Location { get; set; }
+            public ErrorInformation Info { get; set; }
+        }
+
+        // Mostly stolen from DynamicParserLanguageServiceItem
+        class ToDoErrorReporter : ErrorReporter
+        {
+            public ToDoErrorReporter() 
+            {
+                Errors = new List<ErrorInfo>();
+            }
+
+            protected override void OnError(ISourceLocation sourceLocation, ErrorInformation errorInformation)
+            {
+                Errors.Add(new ErrorInfo { Location = sourceLocation, Info = errorInformation });
+            }
+
+            public List<ErrorInfo> Errors { get; set; }
+
+            public override void Clear()
+            {
+                Errors.Clear();
+                base.Clear();
+            }
+        }
+
+        class ToDoLanguageServiceItem : ILanguageServiceItem, IDisposable
         {
             BufferView bufferView;
             ParserClassifier classifier;
+            Timer reparseTimer;
+            DynamicParser parser;
+            Uri uri;
 
             // boilerplate
+            ITextBuffer textBuffer;
+            volatile bool bufferDirty = false;
+            volatile object l = new object();
+
             ISquiggleProvider squiggleProvider;
             ISquiggleProviderFactory squiggleProviderFactory;
-            System.Threading.Timer reclassifyTimer;
-            ITextBuffer textBuffer;
+            List<ISquiggleAdornment> squiggles;
 
             public ToDoLanguageServiceItem(BufferView b, ISquiggleProviderFactory squiggleProviderFactory)
             {
                 // Described in MGrammar in a Nutshell (http://msdn.microsoft.com/en-us/library/dd129870.aspx)
                 // and in PDC 2008 talk "Building Textual DSLs with the "Oslo" Modeling Language" (32:00 mark).
                 //
-                System.Dataflow.DynamicParser parser = null;
+                parser = null;
                 Assembly assembly = Assembly.GetExecutingAssembly();
                 using (Stream stream = assembly.GetManifestResourceStream("ToDo.mgx"))
                 {
@@ -78,29 +119,99 @@ namespace ToDo
                     parser = Microsoft.M.Grammar.MGrammarCompiler.LoadParserFromMgx(stream, "ToDo.Tasks4");
                 }
 
-                // boilerplate
-                bufferView = b;
-                this.classifier = new ParserClassifier(parser, bufferView.Buffer.TextBuffer);
                 this.squiggleProviderFactory = squiggleProviderFactory;
+                this.squiggles = new List<ISquiggleAdornment>();
+
+                reparseTimer = new Timer(Reparse, null, Timeout.Infinite, Timeout.Infinite);
+
+                this.bufferView = b;
+                this.classifier = new ParserClassifier(parser, bufferView.Buffer.TextBuffer);
                 this.textBuffer = bufferView.TextBuffer;
-
-                this.reclassifyTimer = new System.Threading.Timer((o) =>
-                {
-                    if (ClassificationChanged != null && classifier != null)
-                    {
-                        SnapshotSpan span = classifier.Reclassify(this.textBuffer.CurrentSnapshot);
-                        NotifyClassificationChanged(span);
-                    }
-
-                }, null, -1, -1);
-
-                this.textBuffer.Changed += (o, e) =>
-                {
-                    // TODO (dougwa): the value here (50) should be configurable.
-                    this.reclassifyTimer.Change(50, -1);
-                };
-
                 this.bufferView.EditorInitialized += OnBufferViewEditorInitialized;
+                this.uri = this.bufferView.Buffer.Uri;
+
+                this.textBuffer.Changed += (ignore1, ignore2) => { lock (l) { bufferDirty = true; } };
+            }
+
+            ~ToDoLanguageServiceItem()
+            {
+                Dispose();
+            }
+
+            void Reparse(object ignored)
+            {
+                if (bufferDirty)
+                {
+                    lock (l)
+                        if (bufferDirty)
+                            bufferDirty = false;
+
+                    // Mostly stolen from DynamicParserLanguageServiceItem
+                    ToDoErrorReporter reporter = new ToDoErrorReporter();
+                    parser.ParseObject(uri.ToString(), new TextSnapshotToTextReader(this.textBuffer.CurrentSnapshot),
+                        reporter);
+
+                    this.bufferView.Dispatcher.BeginInvoke(
+                        DispatcherPriority.Normal, (Action)delegate {
+                        CleanupOldToolTipPopups();
+                        ProcessSquiggles(reporter);
+                    });
+                }
+            }
+
+            // Stolen from DynamicParserLanguageServiceItem
+            void CleanupOldToolTipPopups()
+            {
+                if (this.bufferView.TextEditor != null)
+                {
+                    ISpaceReservationManager manager = (this.bufferView.TextEditor.TextView as IWpfTextView).GetSpaceReservationManager("ToolTip");
+                    if (manager != null)
+                    {
+                        List<ISpaceReservationAgent> agents = new List<ISpaceReservationAgent>(manager.Agents);
+                        foreach (ISpaceReservationAgent toolTipAgent in agents)
+                            manager.RemoveAgent(toolTipAgent);
+                    }
+                }
+
+            }
+
+            // Mostly stolen from DynamicParserLanguageServiceItem
+            void ProcessSquiggles(ToDoErrorReporter reporter)
+            {
+                if (this.squiggleProvider == null)
+                    return;
+
+                foreach (ISquiggleAdornment squiggle in this.squiggles)
+                    this.squiggleProvider.RemoveSquiggle(squiggle);
+
+                this.squiggles.Clear();
+
+                foreach (ErrorInfo error in reporter.Errors)
+                {
+                    if (error.Location != null && error.Location.Span.Length > 0)
+                    {
+                        SnapshotSpan convertedSpan = GetCurrentSpan((ITextSnapshot)this.textBuffer.CurrentSnapshot,
+                            error.Location.Span);
+                        ITrackingSpan trackingSpan = convertedSpan.Snapshot.CreateTrackingSpan(
+                            convertedSpan.Span,
+                            SpanTrackingMode.EdgeExclusive);
+                        ISquiggleAdornment squiggle = this.squiggleProvider.AddSquiggle(trackingSpan, 
+                            String.Format(error.Info.Message, new List<object>(error.Info.Arguments).ToArray()));
+                        this.squiggles.Add(squiggle);
+                    }
+                }
+            }
+
+            // Stolen from DynamicParserLanguageServiceItem
+            SnapshotSpan GetCurrentSpan(ITextSnapshot snapshot, SourceSpan span)
+            {
+                ITextSnapshot currentSnapshot = this.bufferView.TextBuffer.CurrentSnapshot;
+                // TODO (dougwa): deal with line/column spans
+                TextSnapshot cloneSnapshot = new TextSnapshot(snapshot, (TextBufferClone)this.bufferView.TextBuffer);
+                SnapshotSpan oldSpan = new SnapshotSpan(cloneSnapshot, span.Start.Index, span.Length);
+
+                SnapshotSpan newSpan = oldSpan.TranslateTo(currentSnapshot, SpanTrackingMode.EdgePositive);
+                return newSpan;
             }
 
             // boilerplate
@@ -108,43 +219,36 @@ namespace ToDo
             {
                 this.bufferView.EditorInitialized -= OnBufferViewEditorInitialized;
                 this.squiggleProvider = this.squiggleProviderFactory.GetSquiggleProvider(this.bufferView.TextEditor.TextView);
+
+                // start looking for errors
+                this.reparseTimer.Change(100, 100);
             }
+
+            // boilerplace
+            public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged;
+            public event EventHandler<GetCompletionItemsEventArgs> GetCompletionItemsCompleted;
+            public IntelliBuffer Buffer { get { return bufferView.Buffer; } }
 
             // boilerplate
-            void NotifyClassificationChanged(SnapshotSpan span)
-            {
-                if (ClassificationChanged != null)
-                {
-                    ClassificationChanged(this, new ClassificationChangedEventArgs(span));
-                }
-            }
-
-            public IntelliBuffer Buffer
-            {
-                get { return bufferView.Buffer; }
-            }
-
-            public event System.EventHandler<Microsoft.VisualStudio.Text.Classification.ClassificationChangedEventArgs> ClassificationChanged;
-
-            // boilerplate
-            public System.Collections.Generic.IEnumerable<ClassificationItem> GetClassificationItems(Microsoft.VisualStudio.Text.SnapshotSpan span)
+            public IEnumerable<ClassificationItem> GetClassificationItems(SnapshotSpan span)
             {
                 return classifier.GetClassificationItems(span);
             }
 
             // boilerplate
-            public void GetCompletionItemsAsync(Microsoft.VisualStudio.Text.SnapshotPoint point, object userState)
+            public void GetCompletionItemsAsync(SnapshotPoint point, object userState)
             {
                 if (GetCompletionItemsCompleted != null)
                     GetCompletionItemsCompleted(this, new GetCompletionItemsEventArgs(null, userState));
             }
 
-            public event System.EventHandler<GetCompletionItemsEventArgs> GetCompletionItemsCompleted;
+            // boilerplate
+            public ISymbol GetSymbol(SnapshotPoint point) { return null; }
 
-            public ISymbol GetSymbol(Microsoft.VisualStudio.Text.SnapshotPoint point)
+            public void Dispose()
             {
-                // boilerplate
-                return null;
+                reparseTimer.Dispose();
+                GC.SuppressFinalize(this);
             }
         }
     }
