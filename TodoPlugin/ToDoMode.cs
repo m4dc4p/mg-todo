@@ -67,7 +67,7 @@ namespace ToDo
             public ErrorInformation Info { get; set; }
         }
 
-        // Mostly stolen from DynamicParserLanguageServiceItem
+        // Mostly from DynamicParserLanguageServiceItem
         class ToDoErrorReporter : ErrorReporter
         {
             public ToDoErrorReporter() 
@@ -108,28 +108,26 @@ namespace ToDo
 
             public ToDoLanguageServiceItem(BufferView b, ISquiggleProviderFactory squiggleProviderFactory)
             {
+                this.bufferView = b;
+                this.uri = this.bufferView.Buffer.Uri;
+                this.squiggleProviderFactory = squiggleProviderFactory;
+                this.squiggles = new List<ISquiggleAdornment>();
+                this.textBuffer = this.bufferView.TextBuffer;
+                this.reparseTimer = new Timer(Reparse, null, Timeout.Infinite, Timeout.Infinite);
+
                 // Described in MGrammar in a Nutshell (http://msdn.microsoft.com/en-us/library/dd129870.aspx)
                 // and in PDC 2008 talk "Building Textual DSLs with the "Oslo" Modeling Language" (32:00 mark).
                 //
-                parser = null;
-                Assembly assembly = Assembly.GetExecutingAssembly();
-                using (Stream stream = assembly.GetManifestResourceStream("ToDo.mgx"))
+                this.parser = null;
+                using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("ToDo.mgx"))
                 {
                     // Load image and instantiate a corresponding dynamic parser
-                    parser = Microsoft.M.Grammar.MGrammarCompiler.LoadParserFromMgx(stream, "ToDo.Tasks4");
+                    this.parser = Microsoft.M.Grammar.MGrammarCompiler.LoadParserFromMgx(stream, "ToDo.Tasks4");
                 }
 
-                this.squiggleProviderFactory = squiggleProviderFactory;
-                this.squiggles = new List<ISquiggleAdornment>();
-
-                reparseTimer = new Timer(Reparse, null, Timeout.Infinite, Timeout.Infinite);
-
-                this.bufferView = b;
                 this.classifier = new ParserClassifier(parser, bufferView.Buffer.TextBuffer);
-                this.textBuffer = bufferView.TextBuffer;
-                this.bufferView.EditorInitialized += OnBufferViewEditorInitialized;
-                this.uri = this.bufferView.Buffer.Uri;
 
+                this.bufferView.EditorInitialized += OnBufferViewEditorInitialized;
                 this.textBuffer.Changed += (ignore1, ignore2) => { lock (l) { bufferDirty = true; } };
             }
 
@@ -159,7 +157,7 @@ namespace ToDo
                 }
             }
 
-            // Stolen from DynamicParserLanguageServiceItem
+            // From DynamicParserLanguageServiceItem
             void CleanupOldToolTipPopups()
             {
                 if (this.bufferView.TextEditor != null)
@@ -175,7 +173,7 @@ namespace ToDo
 
             }
 
-            // Mostly stolen from DynamicParserLanguageServiceItem
+            // Mostly from DynamicParserLanguageServiceItem
             void ProcessSquiggles(ToDoErrorReporter reporter)
             {
                 if (this.squiggleProvider == null)
@@ -202,7 +200,7 @@ namespace ToDo
                 }
             }
 
-            // Stolen from DynamicParserLanguageServiceItem
+            // From DynamicParserLanguageServiceItem
             SnapshotSpan GetCurrentSpan(ITextSnapshot snapshot, SourceSpan span)
             {
                 ITextSnapshot currentSnapshot = this.bufferView.TextBuffer.CurrentSnapshot;
@@ -247,7 +245,9 @@ namespace ToDo
 
             public void Dispose()
             {
-                reparseTimer.Dispose();
+                if(reparseTimer != null)
+                    reparseTimer.Dispose();
+
                 GC.SuppressFinalize(this);
             }
         }

@@ -3,5 +3,8 @@ task "lets make this useful." 08-28-2008
 # Solved by precedence rules
 task "lets make this useful." 01-01-2008
 task "Add ability to comment" 08-29-3000
-task
+task "foo"
+
+
+
     
