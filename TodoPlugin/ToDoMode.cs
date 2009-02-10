@@ -75,9 +75,9 @@ namespace ToDo
                 Errors = new List<ErrorInfo>();
             }
 
-            protected override void OnError(ISourceLocation sourceLocation, ErrorInformation errorInformation)
+            protected override void OnError(ErrorInformation errorInformation)
             {
-                Errors.Add(new ErrorInfo { Location = sourceLocation, Info = errorInformation });
+                Errors.Add(new ErrorInfo { Location = errorInformation.Location, Info = errorInformation });
             }
 
             public List<ErrorInfo> Errors { get; set; }
@@ -122,7 +122,7 @@ namespace ToDo
                 using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("ToDo.mgx"))
                 {
                     // Load image and instantiate a corresponding dynamic parser
-                    this.parser = Microsoft.M.Grammar.MGrammarCompiler.LoadParserFromMgx(stream, "ToDo.Tasks4");
+                    this.parser = DynamicParser.LoadFromMgx(stream, "ToDo.Tasks4");
                 }
 
                 this.classifier = new ParserClassifier(parser, bufferView.Buffer.TextBuffer);
@@ -146,7 +146,7 @@ namespace ToDo
 
                     // Mostly stolen from DynamicParserLanguageServiceItem
                     ToDoErrorReporter reporter = new ToDoErrorReporter();
-                    parser.ParseObject(uri.ToString(), new TextSnapshotToTextReader(this.textBuffer.CurrentSnapshot),
+                    parser.Parse<object>(uri.ToString(), new TextSnapshotToTextReader(this.textBuffer.CurrentSnapshot),
                         reporter);
 
                     this.bufferView.Dispatcher.BeginInvoke(

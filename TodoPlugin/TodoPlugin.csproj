@@ -64,11 +64,6 @@
     <Compile Include="ToDoMode.cs" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="ToDoCommands.py">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-  <ItemGroup>
     <MgCompile Include="todo4.mg" />
   </ItemGroup>
   <ItemGroup>
@@ -84,9 +79,8 @@
   </Target>
   -->
   <PropertyGroup>
-    <PostBuildEvent>REM xcopy "$(TargetPath)" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo" /S /D /I /Y
-REM xcopy "$(TargetDir)*.py" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo" /S /D /I /Y
-REM  xcopy "$(TargetDir)Microsoft.M.Grammar.dll" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo" /S /D /I /Y
+    <PostBuildEvent>xcopy "$(TargetPath)" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo\" /S /D /I /Y
+xcopy "$(TargetDir)Microsoft.M.Grammar.dll" "C:\Program Files\Microsoft Oslo SDK 1.0\Bin\Intellipad\Components\ToDo\" /S /D /I /Y
 </PostBuildEvent>
   </PropertyGroup>
 </Project>

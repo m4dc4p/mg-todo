@@ -1,4 +1,4 @@
-module ToDo
+﻿module ToDo
 {
     // Projecting our tasks into a resonable object
     // model.
@@ -29,7 +29,7 @@ module ToDo
         token QuotedText(Q) = Q (Text - Q)* Q;
         
         // Inspired by M.mg
-        token Text = '"' ^('\n' | '\r')* '"'; 
+        token Text =  ^('\n' | '\r'); 
         
         // Ignore whitespace
         interleave Whitespace = '\r' | ' ' | '\n';
